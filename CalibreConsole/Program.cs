@@ -1,9 +1,14 @@
 ﻿using System.IO;
 using System.Diagnostics;
+using Npgsql;
+//ebook-convert dosya.pdf dosya.epub --prefer-metadata-cover --no-chapters-in-toc --epub-version 3 --no-default-epub-cover --extra-css p{text-indent:5mm;}
+// try catch lere al
+// boş bir projede kitapı farklı yere bastırıp unzip yaptır.
 class Program
 {
-    static string epubpath = @"C:\Users\Gurkan\Desktop\epub\";
-    static string pdfpath = @"C:\Users\Gurkan\Desktop\pdf\";
+    static string epubPath = @"C:\Users\Gurkan\Desktop\epub\";
+    //static string pdfPath = @"C:\Users\Gurkan\Desktop\pdf\";
+    //static string extractPath = @"C:\Users\Gurkan\Desktop\extract";
     static void Main(string[] args)
     {
 
@@ -13,6 +18,7 @@ class Program
 
         //Alt kategorileri izlemeye dahil et.
         file.IncludeSubdirectories = true;
+        
 
         file.Changed += (sender, e) => {
             ConvertToEpub(e.FullPath);
@@ -28,8 +34,30 @@ class Program
 
         // İzleme işlemini başlatıyoruz.
         file.EnableRaisingEvents = true;
+        Console.ReadLine();
+    }
 
-        ConvertToEpub(pdfpath);
+    static void KeepLog(string message, string level = "Error")
+    {
+        try
+        {
+            using (NpgsqlConnection conn = new NpgsqlConnection("Server=localhost; Port=5432; User Id=postgres; Password=1; Database=Kitap12Logs"))
+            {
+                conn.Open();
+                NpgsqlCommand cmd = new NpgsqlCommand("select public.loginsertselect(@date, @message, @level, @assembly, '', '', ''", conn);
+                cmd.Parameters.AddWithValue("@date", DateTime.Now);
+                cmd.Parameters.AddWithValue("@message", message);
+                cmd.Parameters.AddWithValue("@level", level);
+                cmd.Parameters.AddWithValue("@assembly", "Calibre Convert");
+                cmd.ExecuteNonQuery();
+                conn.Close();
+            }
+        }
+        catch(Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+        }
+        
     }
 
     static void ConvertToEpub(string pdfpath)
@@ -38,26 +66,71 @@ class Program
         //    return;
         try
         {
-            //string fileName = Path.GetFileNameWithoutExtension(pdfpath);
-            //Path.Combine(epubpath, fileName);
+            //Console.WriteLine(Guid.NewGuid().ToString());
+
+            //return;
+            string isbn = Path.GetFileNameWithoutExtension(pdfpath);
+            Console.WriteLine(isbn);
+            string id = GetBookId(isbn);
+            if( id == null)
+                return;
+            string saveDir = Path.Combine(epubPath, id);
+            string savePath = Path.Combine(saveDir, isbn) + ".epub";
             string myPath = "CMD.exe";
-            string query = string.Format("/c ebook-convert {0}karabalik.pdf {1}dosya.epub --prefer-metadata-cover --no-chapters-in-toc --no-default-epub-cover --epub-version {2} --extra-css \"{3}\"", pdfpath, epubpath,
+            string query = string.Format("/c ebook-convert {0} {1} --prefer-metadata-cover --no-chapters-in-toc --no-default-epub-cover --epub-version {2} --extra-css \"{3}\"", pdfpath, savePath,
                     3, "p { text-indent:5mm; }");
+            if(!Directory.Exists(saveDir))
+                Directory.CreateDirectory(saveDir); 
             Process prc = new();
             prc.StartInfo.FileName = myPath;
-            prc.StartInfo.Arguments = query;//query
+            prc.StartInfo.Arguments = query;
             Console.WriteLine(query);
             prc.Start();
             Console.WriteLine("bitti");
+            prc.WaitForExit();
+            PdfDelete(pdfpath);
+            System.IO.Compression.ZipFile.ExtractToDirectory(savePath, saveDir);
+            File.Delete(savePath);
+
         }
         catch(Exception ex)
         {
             Console.WriteLine(ex.Message);
         }
-        Console.ReadLine();
-      
- 
 
-        //ebook-convert dosya.pdf dosya.epub --prefer-metadata-cover --no-chapters-in-toc --epub-version 3 --no-default-epub-cover --extra-css p{text-indent:5mm;}
+
+        static void PdfDelete(string pdfpath)
+        {
+            try
+            {
+                File.Delete(pdfpath);
+            }
+            catch(Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+            }
+            
+        }
+
+        static string? GetBookId(string isbn)
+        {
+            string? id;
+            using (NpgsqlConnection conn = new NpgsqlConnection("Server=localhost; Port=5432; User Id=postgres; Password=1; Database=Kitap12"))
+            {
+                conn.Open();
+
+                NpgsqlCommand cmd = new NpgsqlCommand("SELECT id FROM book WHERE isbn = @filename", conn);
+                cmd.Parameters.AddWithValue("@filename", isbn);
+                id = cmd.ExecuteScalar()?.ToString();
+
+                conn.Close();
+            }
+            if (id == null)
+            {
+                KeepLog(string.Format("{0} isbn numaralı kitap bulunamadı", isbn));
+            }
+            return id;
+        }
+
     }
 }
