@@ -2,8 +2,6 @@
 using System.Diagnostics;
 using Npgsql;
 //ebook-convert dosya.pdf dosya.epub --prefer-metadata-cover --no-chapters-in-toc --epub-version 3 --no-default-epub-cover --extra-css p{text-indent:5mm;}
-// try catch lere al
-// boş bir projede kitapı farklı yere bastırıp unzip yaptır.
 class Program
 {
     static string epubPath = @"C:\Users\Gurkan\Desktop\epub\";
@@ -18,17 +16,21 @@ class Program
 
         //Alt kategorileri izlemeye dahil et.
         file.IncludeSubdirectories = true;
-        
 
-        file.Changed += (sender, e) => {
-            ConvertToEpub(e.FullPath);
+        file.Changed += (sender, e) =>
+        {
+
+            if (File.Exists(e.FullPath))
+                ConvertToEpub(e.FullPath);
         };
-        file.Created += (sender, e) => {
+        file.Created += (sender, e) =>
+        {
             ConvertToEpub(e.FullPath);
         };
 
         //Bir hata durumunda tetiklenecek event.
-        file.Error += (sender, eventArgs) => {
+        file.Error += (sender, eventArgs) =>
+        {
             Console.WriteLine($"Hata: {eventArgs.GetException()}");
         };
 
@@ -44,7 +46,7 @@ class Program
             using (NpgsqlConnection conn = new NpgsqlConnection("Server=localhost; Port=5432; User Id=postgres; Password=1; Database=Kitap12Logs"))
             {
                 conn.Open();
-                NpgsqlCommand cmd = new NpgsqlCommand("select public.loginsertselect(@date, @message, @level, @assembly, '', '', ''", conn);
+                NpgsqlCommand cmd = new NpgsqlCommand("select public.loginsertselect(@date, @message, @level, @assembly, '', '', '')", conn);
                 cmd.Parameters.AddWithValue("@date", DateTime.Now);
                 cmd.Parameters.AddWithValue("@message", message);
                 cmd.Parameters.AddWithValue("@level", level);
@@ -53,11 +55,11 @@ class Program
                 conn.Close();
             }
         }
-        catch(Exception ex)
+        catch (Exception ex)
         {
             Console.WriteLine(ex.Message);
         }
-        
+
     }
 
     static void ConvertToEpub(string pdfpath)
@@ -72,44 +74,46 @@ class Program
             string isbn = Path.GetFileNameWithoutExtension(pdfpath);
             Console.WriteLine(isbn);
             string id = GetBookId(isbn);
-            if( id == null)
-                return;
-            string saveDir = Path.Combine(epubPath, id);
-            string savePath = Path.Combine(saveDir, isbn) + ".epub";
-            string myPath = "CMD.exe";
-            string query = string.Format("/c ebook-convert {0} {1} --prefer-metadata-cover --no-chapters-in-toc --no-default-epub-cover --epub-version {2} --extra-css \"{3}\"", pdfpath, savePath,
-                    3, "p { text-indent:5mm; }");
-            if(!Directory.Exists(saveDir))
-                Directory.CreateDirectory(saveDir); 
-            Process prc = new();
-            prc.StartInfo.FileName = myPath;
-            prc.StartInfo.Arguments = query;
-            Console.WriteLine(query);
-            prc.Start();
-            Console.WriteLine("bitti");
-            prc.WaitForExit();
-            PdfDelete(pdfpath);
-            System.IO.Compression.ZipFile.ExtractToDirectory(savePath, saveDir);
-            File.Delete(savePath);
+            if (id != null)
+            {
 
+                string saveDir = Path.Combine(epubPath, id);
+                string savePath = Path.Combine(saveDir, isbn) + ".epub";
+                string myPath = "CMD.exe";
+                string query = string.Format("/c ebook-convert {0} {1} --prefer-metadata-cover --no-chapters-in-toc --no-default-epub-cover --epub-version {2} --extra-css \"{3}\"", pdfpath, savePath,
+                        3, "p { text-indent:5mm; }");
+                if (!Directory.Exists(saveDir))
+                    Directory.CreateDirectory(saveDir);
+                Process prc = new();
+                prc.StartInfo.FileName = myPath;
+                prc.StartInfo.Arguments = query;
+                Console.WriteLine(query);
+                prc.Start();
+                Console.WriteLine("bitti");
+                prc.WaitForExit();
+                System.IO.Compression.ZipFile.ExtractToDirectory(savePath, saveDir, true);
+                File.Delete(savePath);
+            }
+
+            FileDelete(pdfpath);
         }
-        catch(Exception ex)
+        catch (Exception ex)
         {
             Console.WriteLine(ex.Message);
         }
 
 
-        static void PdfDelete(string pdfpath)
+        static void FileDelete(string path)
         {
             try
             {
-                File.Delete(pdfpath);
+                File.Delete(path);
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 Console.WriteLine(ex.Message);
             }
-            
+
         }
 
         static string? GetBookId(string isbn)
